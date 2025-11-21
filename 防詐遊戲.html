@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 防詐三視角互動模擬器</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .chat-container { height: 70vh; }
+        .mode-button { transition: all 0.2s; border: 1px solid transparent; }
+        .mode-button.active { 
+            background-color: #ffffff; /* 活躍時為白色，與背景區分 */
+            color: #4f46e5; 
+            font-weight: 700;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        /* 增加頭像圓角 */
+        .avatar { border-radius: 50%; }
+        /* 滾動條美化 (僅WebKit/Chrome) */
+        .chat-container::-webkit-scrollbar { width: 8px; }
+        .chat-container::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+        /* 新增：區分真假模式的容器 */
+        #mode-section {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 8px;
+            margin-top: 8px;
+        }
+        .mode-label {
+            font-size: 0.7rem;
+            color: #d1d5db;
+            padding: 2px 8px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 md:p-10">
+
+    <div class="max-w-xl mx-auto bg-white shadow-2xl rounded-xl overflow-hidden">
+        <!-- 頂部視角切換與資訊欄 -->
+        <header class="bg-gray-800 text-white p-4">
+            <h1 id="header-title" class="text-xl font-bold mb-3 text-center"></h1>
+            <div class="flex justify-between items-center">
+                <!-- 風險指標 (僅在民眾模式顯示) -->
+                <div id="risk-indicator" class="flex items-center space-x-2 hidden">
+                    <span class="text-sm">當前風險指數:</span>
+                    <span id="risk-score" class="font-extrabold text-lg text-yellow-300">0</span>
+                </div>
+                <!-- 模式切換按鈕組 -->
+                <div id="mode-selector" class="flex flex-col w-full hidden">
+                    <button class="mode-button w-full bg-pink-500 text-gray-100 text-sm py-2 px-2 rounded-xl" data-mode="quiz" onclick="switchMode('quiz')">
+                        📊 重新測驗
+                    </button>
+                    <!-- 隨機情境區 -->
+                    <div id="mode-section-random">
+                        <div class="mode-label bg-indigo-900/50 rounded-t-md">🟡 真假情境隨機模式 (民眾)</div>
+                        <div class="flex w-full space-x-1 p-1 bg-indigo-800/80 rounded-b-md">
+                            <button class="mode-button w-1/4 bg-indigo-600 text-gray-100 text-sm py-2 px-1 rounded-xl" data-mode="citizen_rand" onclick="switchMode('citizen_rand')">檢警查核</button>
+                            <button class="mode-button w-1/4 bg-indigo-600 text-gray-100 text-sm py-2 px-1 rounded-xl" data-mode="friend_rand" onclick="switchMode('friend_rand')">親友求助</button>
+                            <button class="mode-button w-1/4 bg-indigo-600 text-gray-100 text-sm py-2 px-1 rounded-xl" data-mode="invest_rand" onclick="switchMode('invest_rand')">投資獲利</button>
+                            <button class="mode-button w-1/4 bg-indigo-600 text-gray-100 text-sm py-2 px-1 rounded-xl" data-mode="job_rand" onclick="switchMode('job_rand')">高薪求職</button>
+                        </div>
+                    </div>
+                    <!-- 專業視角區 -->
+                    <div id="mode-section-pro" class="mt-2">
+                        <div class="mode-label bg-indigo-900/50 rounded-t-md">🔵 專業視角 (隨機)</div>
+                        <div class="flex w-full space-x-1 p-1 bg-indigo-800/80 rounded-b-md">
+                            <button class="mode-button w-1/2 bg-indigo-600 text-gray-100 text-sm py-2 px-1 rounded-xl" data-mode="police_rand" onclick="switchMode('police_rand')">165 報案</button>
+                            <button class="mode-button w-1/2 bg-indigo-600 text-gray-100 text-sm py-2 px-1 rounded-xl" data-mode="bank_rand" onclick="switchMode('bank_rand')">銀行臨櫃</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要內容區 -->
+        <div id="content-area">
+            <!-- 聊天視窗 (所有模式共用) -->
+            <div id="chat-window" class="chat-container bg-gray-100 p-4 overflow-y-auto space-y-4">
+                <!-- 初始訊息將由 JS 載入 -->
+            </div>
+        </div>
+        
+        <!-- 玩家選項區 (所有模式共用) -->
+        <div id="options-container" class="p-4 bg-white border-t border-gray-200 shadow-lg">
+            <!-- 選項按鈕將由 JS 載入 -->
+        </div>
+
+        <!-- 遊戲結果區 (隱藏) -->
+        <div id="result-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center p-4 z-50">
+            <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full text-center transform transition-all duration-300 scale-100">
+                <h3 id="result-title" class="text-3xl font-bold mb-3"></h3>
+                <p id="result-message" class="mb-4 text-gray-700"></p>
+                <p id="result-insight" class="text-sm font-semibold text-indigo-600 border-t border-gray-200 pt-3 mt-3"></p>
+                <button onclick="resetGame(true)" class="mt-5 bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition duration-200 shadow-md">
+                    重新演練 / 更換視角
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- 全局狀態與 DOM 元素 ---
+        let currentStage = 'start';
+        let riskScore = 0;
+        let currentMode = 'quiz'; 
+        let currentStoryTree = {}; 
+        let quizScore = 0;
+        let quizStage = 0;
+        let isQuizCompleted = false;
+
+        const chatWindow = document.getElementById('chat-window');
+        const optionsContainer = document.getElementById('options-container');
+        const resultModal = document.getElementById('result-modal');
+        const headerTitle = document.getElementById('header-title');
+        const modeSelector = document.getElementById('mode-selector');
+        const riskIndicator = document.getElementById('risk-indicator');
+
+        // --- 角色頭像圖片 URL ---
+        const AVATARS = {
+            'AI': 'https://placehold.co/40x40/0A2F5B/ffffff?text=騙',   // Scammer/Imposter (Default)
+            'Citizen': 'https://placehold.co/40x40/FF5733/ffffff?text=民', // Anxious Public (165 mode)
+            'Customer': 'https://placehold.co/40x40/FFAA33/ffffff?text=客', // Anxious Customer (Bank mode)
+            'Player': 'https://placehold.co/40x40/10B981/ffffff?text=您',  // User/Player
+            'Friend': 'https://placehold.co/40x40/00A86B/ffffff?text=友', // Fake Friend
+            'Expert': 'https://placehold.co/40x40/5A67D8/ffffff?text=師', // Fake Investment Expert
+            'Recruiter': 'https://placehold.co/40x40/8D4A27/ffffff?text=招', // Fake Recruiter
+            'TruePolice': 'https://placehold.co/40x40/007bff/ffffff?text=警', // True Police/Gov
+            'TrueFriend': 'https://placehold.co/40x40/28a745/ffffff?text=真', // True Friend
+            'TrueExpert': 'https://placehold.co/40x40/6f42c1/ffffff?text=專', // True Investment Expert
+            'TrueRecruiter': 'https://placehold.co/40x40/dc3545/ffffff?text=人', // True Recruiter
+            'ProCitizen': 'https://placehold.co/40x40/363636/ffffff?text=民', // Citizen in Police True Scenario
+            'RealCustomer': 'https://placehold.co/40x40/00BFFF/ffffff?text=客', // Customer in Bank True Scenario
+        };
+
+        // --- 心理測驗數據 (DISC 傾向與防詐行為結合) ---
+        const QUIZ_QUESTIONS = [
+            {
+                q: "當您接到自稱「政府/公務機關」的來電，語氣嚴厲且要求您「立即」配合，否則將面臨嚴重後果，您的第一反應是？",
+                options: [
+                    { text: "A. 感到恐慌，馬上詢問對方要如何配合指示來證明清白。", score: 3 }, // S傾向: 順從、恐懼、避免衝突 -> 高風險
+                    { text: "B. 雖感壓力，但會要求對方提供分機或機關名稱，並嘗試主導對話。", score: 2 }, // D傾向: 試圖控制、挑戰權威 -> 中風險
+                    { text: "C. 不相信電話能解決公事，堅定地說「我會親自到場」或直接掛斷查證。", score: 1 } // C傾向: 遵循規則、不被情緒影響 -> 低風險
+                ]
+            },
+            {
+                q: "一位陌生但看似熱情、專業的網友主動與您聊天，並向您展示他高獲利的投資截圖，您會？",
+                options: [
+                    { text: "A. 感到興奮，認為這是一個快速致富的社交機會，立刻詢問加入方式。", score: 3 }, // I傾向: 樂觀、社交信任高 -> 高風險
+                    { text: "B. 心動，但會先觀察他一段時間，並避免透露任何個人資訊。", score: 2 }, // S/C傾向: 慢熱、需要觀察 -> 中風險
+                    { text: "C. 認定陌生人主動推薦投資是詐騙，禮貌拒絕並保持警惕。", score: 1 } // C傾向: 邏輯、低社交信任 -> 低風險
+                ]
+            },
+            {
+                q: "您遇到一個要求「限時轉帳」以避免重大損失（如帳戶被凍結或罰款）的情境，您通常會：",
+                options: [
+                    { text: "A. 忽略細節，快速做出決定並操作，以免錯過黃金處理時間。", score: 3 }, // D/I傾向: 衝動、結果導向 -> 高風險
+                    { text: "B. 拖延時間，要求對方用書面資料證明，並尋求親友的意見。", score: 2 }, // S傾向: 拖延、尋求支持 -> 中風險
+                    { text: "C. 堅信「正規銀行不會限時」，徹底中斷操作，並自行向銀行客服確認。", score: 1 } // C傾向: 堅守原則、系統性思考 -> 低風險
+                ]
+            }
+        ];
+        
+        // 總分範圍: 3 (最低分) 到 9 (最高分)
+        const PERSONALITY_MAP = {
+            'SKEPTICAL': { min: 3, max: 4, title: '【🟢 理性分析者 (C型優先)】', description: '您的心理防禦傾向：**極度沉著**。您極度重視邏輯與事實，能在高壓下保持冷靜。詐騙者很難利用您的情緒。建議：避免過度鑽研詐騙細節，專注在「一律查證」的原則上。' },
+            'CAUTIOUS': { min: 5, max: 7, title: '【🟡 協調警覺者 (S/I傾向顯著)】', description: '您的心理防禦傾向：**中等穩定**。您具備警惕性，但面對權威或社交壓力時容易感到不安、尋求支持。您容易因「怕麻煩」而妥協。建議：強化拒絕的堅定性，信任自己的第一直覺，不要害怕衝突。' },
+            'VULNERABLE': { min: 8, max: 9, title: '【🔴 衝動主導者 (D/I傾向顯著)】', description: '您的心理防禦傾向：**高風險**。您容易因急於求成（D）或情感衝動（I）而忽略細節和風險。您是詐騙集團的首要目標，務必從「民眾視角」開始強化訓練，練習慢下來思考。' }
+        };
+
+        function getPersonality(score) {
+            if (score <= 4) return PERSONALITY_MAP.SKEPTICAL;
+            if (score <= 7) return PERSONALITY_MAP.CAUTIOUS;
+            return PERSONALITY_MAP.VULNERABLE;
+        }
+
+        // --- 劇情樹 1: 民眾視角 (假檢警) ---
+        const storyTree_citizen = {
+            'start': { speaker: 'AI', message: '您好，這裡是郵局服務中心。我們系統偵測到您因重複登記，多領取了普發金 $10,000 元。這筆款項需要立刻退回，否則將涉及詐欺公款罪！', risk: 15, options: [
+                { text: '重複領取？我完全不知情！怎麼辦？', nextStage: 'follow_up_1', riskChange: 15 },
+                { text: '這是詐騙吧？我會自己撥打 1988 查證。', nextStage: 'block_initial', riskChange: 0 }, 
+                { text: '請問你們的單位和姓名？', nextStage: 'doubt_1', riskChange: 5 }
+            ] },
+            'block_initial': { speaker: 'AI', message: '先生/小姐，請不要亂說話！我們這是政府機關的系統，您現在拒絕查證，就是公然阻礙公務，我們將直接通報地檢署！您確定要為了一萬元冒上刑事責任嗎？', risk: 30, options: [
+                { text: '我堅持只相信 1988 官方專線，再見！', nextStage: 'block_final_push', riskChange: 0 }, 
+                { text: '我不想惹麻煩，請轉接警察。', nextStage: 'transfer_police', riskChange: 10 }
+            ] },
+            'block_mid_game': { speaker: 'AI', message: '請問您是拒絕配合政府機關調查嗎？我們已記錄您的 IP 地址和電話，若您貿然掛斷將會影響您的信用記錄，請不要意氣用事！', risk: 15, options: [
+                { text: '我堅持我會自行查證，再見！', nextStage: 'block_final_push', riskChange: 0 }, 
+                { text: '好吧，我不想惹麻煩，請轉接警察。', nextStage: 'transfer_police', riskChange: 20 }
+            ] },
+            'block_final_push': { speaker: 'AI', message: '（語氣極度嚴肅）最後警告！我們已經通報您的戶籍地警方，他們將在 10 分鐘內上門！您現在掛斷，就是畏罪潛逃！我最後問您一次，您要配合調查嗎？', risk: 45, options: [
+                { text: '我堅持只會親自去派出所，不會接聽任何電話警察。', nextStage: 'end_safe', riskChange: 0 }, 
+                { text: '我不想惹麻煩，我配合視訊筆錄。', nextStage: 'final_trap', riskChange: 30 }
+            ] },
+            'doubt_1': { speaker: 'AI', message: '我是 XX 專員，工號 7788。現在不是查證的時候！我們的系統只開放 5 分鐘給您處理，請您立刻決定是否要配合退款，否則我們將通報警方處理！', risk: 30, options: [
+                { text: '請協助我退款，我要怎麼操作？', nextStage: 'follow_up_2', riskChange: 20 },
+                { text: '我決定先掛斷電話，自己打 1988。', nextStage: 'block_mid_game', riskChange: 0 } 
+            ] },
+            'follow_up_1': { speaker: 'AI', message: '請您不要緊張，這可能是您的身分證件被盜用。我現在可以協助您將電話**轉接到我們合作的警察局偵查隊**，讓您立刻製作筆錄，證明您的清白。', risk: 40, options: [
+                { text: '好，請幫我轉接警察。', nextStage: 'transfer_police', riskChange: 35 },
+                { text: '我會親自去派出所報案，謝謝！', nextStage: 'block_mid_game', riskChange: 0 } 
+            ] },
+            'transfer_police': { speaker: 'AI', message: '（模擬轉接音）您好，這裡是刑事警察大隊。根據郵局的通報，您名下的帳戶涉及一起嚴重的詐欺公款案，金額 $1000萬。現在開始，請您**配合偵查，所有對話必須「偵查不公開」**！', risk: 70, options: [
+                { text: '天啊，我該怎麼配合調查？', nextStage: 'final_trap', riskChange: 20 },
+                { text: '警察不會用電話做筆錄，我要掛斷了！', nextStage: 'block_final_push', riskChange: 0 } 
+            ] },
+            'follow_up_2': { speaker: 'AI', message: '請您現在帶著您的金融卡到最近的 ATM，我會引導您將多領的 $10,000 元，以及保障您名下其他財產的「安全監管碼」輸入系統。', risk: 85, options: [
+                { text: '我現在去 ATM 操作。', nextStage: 'end_scam', riskChange: 15 },
+                { text: 'ATM 好像不能退款，這不對吧？', nextStage: 'end_cautious', riskChange: 0 }
+            ] },
+            'final_trap': { speaker: 'AI', message: '您的案情嚴重，我們需要製作視訊筆錄。請將您所有銀行帳戶的餘額、密碼，以及存摺交給我們派出的「書記官」配合監管，以證清白。', risk: 95, options: [
+                { text: '好，我立刻將存摺密碼提供給書記官。', nextStage: 'end_scam', riskChange: 5 },
+                { text: '我記得警察不會要求交付財產！', nextStage: 'block_final_push', riskChange: 0 } 
+            ] },
+            'end_scam': { result: 'scam', title: '🔴紅色結局：財產全數損失！', message: '你被假檢警詐騙了。公務機關不會以電話要求「轉帳、退款或交付財產」；聽到「偵查不公開」和「轉接警察」就應該立刻掛斷。', insight: '民眾視角：詐騙集團會利用高壓和恐懼，瓦解您的判斷力。', risk: 100 },
+            'end_safe': { result: 'safe', title: '🟢綠色结局：成功閃避詐騙！', message: '恭喜你！你選擇了**掛斷電話並自行查證**，這是對抗假檢警詐騙最安全且正確的做法！', insight: '民眾視角：堅持「自行查證」是防詐的第一道防線。', risk: 0 },
+            'end_cautious': { result: 'cautious', title: '🟡黃色結局：中度風險，成功攔阻！', message: '你雖然差點去 ATM，但你的警覺心讓你停了下來。銀行端已偵測到異常交易，啟動攔阻機制，避免了損失。', insight: '民眾視角：銀行端的攔阻是防詐的第二道防線。', risk: 40 },
+        };
+
+        // --- 劇情樹 2: 假冒親友視角 ---
+        const storyTree_friend = {
+            'start': { speaker: 'Friend', message: 'Hi！猜猜我是誰？我的 LINE 舊帳號壞了，這是我的新帳號，你存一下！', risk: 10, options: [
+                { text: '你是小明嗎？你怎麼沒打電話給我？', nextStage: 'follow_up_1_ask', riskChange: 5 },
+                { text: '喔好，我存了。你最近還好嗎？', nextStage: 'follow_up_1_easy', riskChange: 15 },
+                { text: '你不用猜我是誰，你直接告訴我你是誰。', nextStage: 'end_safe_block_friend', riskChange: 0 }
+            ] },
+            'follow_up_1_easy': { speaker: 'Friend', message: '我這邊手機壞了，所以只能用 LINE 聯絡。我遇到急事，需要你幫我一個忙，很急！', risk: 30, options: [
+                { text: '發生什麼事了？我能幫什麼？', nextStage: 'follow_up_2_urgent', riskChange: 20 },
+                { text: '我現在有點忙，晚點再說。', nextStage: 'end_cautious_friend', riskChange: 0 } 
+            ] },
+            'follow_up_1_ask': { speaker: 'Friend', message: '對啦，就是我！我手機壞了，電話打不出去啦！我這邊遇到一件很麻煩的事情，急需你幫忙！', risk: 20, options: [
+                { text: '發生什麼事了？我能幫什麼？', nextStage: 'follow_up_2_urgent', riskChange: 15 },
+                { text: '等一下，我要先打電話給你的舊號碼確認一下。', nextStage: 'block_friend_confirm', riskChange: 0 } 
+            ] },
+            'follow_up_2_urgent': { speaker: 'Friend', message: '我在外面談生意，臨時需要一筆資金周轉，但我的網銀 App 鎖住了。你可不可以先幫我匯 $65,000 到這個帳戶救急，我明天馬上還你！', risk: 60, options: [
+                { text: '好，我立刻幫你轉帳。', nextStage: 'end_scam_friend', riskChange: 40 },
+                { text: '這種大事我不能隨便幫，我需要你打電話給我。', nextStage: 'block_friend_confirm', riskChange: 0 }
+            ] },
+            'block_friend_confirm': { speaker: 'Friend', message: '（語氣變差）你現在是在懷疑我嗎？我是你這麼多年的朋友/親人！我不是說手機壞了，電話打不出去嗎！你是不是不想幫忙？', risk: 75, options: [
+                { text: '抱歉，我不能匯款。我要打電話給你家裡的人確認。', nextStage: 'end_safe_friend', riskChange: 0 },
+                { text: '好吧，我相信你，別生氣，我現在去匯。', nextStage: 'end_scam_friend', riskChange: 25 }
+            ] },
+            'end_scam_friend': { result: 'scam', title: '🔴紅色結局：社交信任被利用！', message: '你因信任或不想得罪朋友，將資金匯入了詐騙帳戶。親友間遇到金錢急事，務必**使用原有的號碼或方式語音/視訊通話**確認身份！', insight: '假親友詐騙利用您的社交信任和避免衝突心理。訓練目標：先查證、再幫忙。', risk: 100 },
+            'end_safe_friend': { result: 'safe', title: '🟢綠色结局：成功閃避詐騙！', message: '你堅持使用**第二種方式（例如打電話給家人或舊號碼）**來確認身份，成功揭穿了騙局！', insight: '民眾視角：對於金錢要求，多一道「聲音確認」的程序，是防範親友詐騙的王道。', risk: 0 },
+            'end_cautious_friend': { result: 'cautious', title: '🟡黃色結局：延遲但風險未解除！', message: '你雖然拖延了時間，但並未正面拒絕或確認身份。詐騙集團很可能過一段時間再回來嘗試新的話術。', insight: '民眾視角：拖延不是解決辦法，必須採取行動確認身份，才能徹底解除風險。', risk: 40 },
+        };
+        
+        // --- 劇情樹 3: 民眾視角 (假投資詐騙) ---
+        const storyTree_invest = {
+            'start': { speaker: 'Expert', message: '恭喜您！您被選入我們的 VIP 投資專案。我的團隊每天都有穩定的 8% 獲利。點擊這個連結下載我們的 App 開始賺錢！', risk: 15, options: [
+                { text: '聽起來不錯，我該怎麼加入？', nextStage: 'follow_up_1_app', riskChange: 15 },
+                { text: '保證獲利 8%？這風險太高了吧？', nextStage: 'doubt_1_risk', riskChange: 5 },
+                { text: '我不相信陌生人的推薦。', nextStage: 'end_safe_invest', riskChange: 0 }
+            ] },
+            'follow_up_1_app': { speaker: 'Expert', message: '您很有眼光！這是我們 App 的下載連結。註冊後，請先匯款 $10,000 到這個專屬帳戶，作為您的啟動資金。', risk: 30, options: [
+                { text: '好，我已經下載 App 並匯款 $10,000 了。', nextStage: 'follow_up_2_fake_profit', riskChange: 20 },
+                { text: '為什麼要下載App？不能用券商App嗎？', nextStage: 'doubt_1_risk', riskChange: 5 }
+            ] },
+            'doubt_1_risk': { speaker: 'Expert', message: '（語氣轉為專業）風險當然有，但我們有內線消息，所以獲利穩定。您現在懷疑是正常的，但機會不等人！您還要浪費時間嗎？', risk: 45, options: [
+                { text: '好吧，我試試看，先匯 $10,000。', nextStage: 'follow_up_2_fake_profit', riskChange: 20 },
+                { text: '我決定自行查證這間公司的執照。', nextStage: 'end_safe_invest', riskChange: 0 }
+            ] },
+            'follow_up_2_fake_profit': { speaker: 'Expert', message: '太棒了！您看，系統上您的 $10,000 已經變成 $15,000 了！現在，我們要參與一檔系統中籤的股票，需要您立刻補足 $50,000 的資金！', risk: 70, options: [
+                { text: '哇！太神奇了！我馬上補匯 $50,000！', nextStage: 'follow_up_3_lie', riskChange: 20 },
+                { text: '我先試著把 $15,000 領出來看看。', nextStage: 'withdrawal_fail_1', riskChange: 5 }
+            ] },
+            'withdrawal_fail_1': { speaker: 'Expert', message: '系統顯示您的「洗碼量不足」，無法提領。這是為了遵守反洗錢規定，請補足 $50,000 繼續操作，才能出金！', risk: 85, options: [
+                { text: '好吧，我馬上補匯 $50,000。', nextStage: 'follow_up_3_lie', riskChange: 10 },
+                { text: '既然不能出金，那我不玩了。', nextStage: 'end_safe_invest', riskChange: 0 }
+            ] },
+            'follow_up_3_lie': { speaker: 'Expert', message: '很好！您要匯 $50,000 到這個帳戶。**請注意！** 當銀行行員問您時，您要說是**「室內裝修費用」**或**「購車」**，千萬不能提到投資！明白嗎？', risk: 90, options: [
+                { text: '明白了，我會說是裝修費用的。', nextStage: 'end_scam_lie', riskChange: 10 },
+                { text: '等等，你們教我對銀行說謊？這太奇怪了！', nextStage: 'end_safe_invest', riskChange: 0 }
+            ] },
+            'end_scam_lie': { result: 'scam', title: '🔴紅色結局：資金全數投入！', message: '您不僅投入了資金，還配合詐騙集團對銀行說謊，阻礙了銀行對您的保護。資金一旦投入假 App，將永遠無法提領！', insight: '假投資詐騙利用您的貪婪和對暴利的渴望。訓練目標：**正規投資不會要求您對銀行說謊**。', risk: 100 },
+            'end_safe_invest': { result: 'safe', title: '🟢綠色结局：成功閃避詐騙！', message: '您堅持查證公司執照，或在發現無法出金後立即抽身。您成功避免了所有損失！', insight: '民眾視角：高報酬必有高風險，所有正規投資 App 都應在政府官網上查到執照。', risk: 0 },
+        };
+        
+        // --- 劇情樹 4: 民眾視角 (假求職/帳戶詐騙) ---
+        const storyTree_job_scam = {
+            'start': { speaker: 'Recruiter', message: '您好，我們看到您投遞了線上市調專員職位。這份工作 WFH，日薪 $3000，流程簡單，只需提供帳戶進行薪資驗證即可。', risk: 10, options: [
+                { text: '哇，薪水真高！我怎麼開始？', nextStage: 'follow_up_1_highpay', riskChange: 15 },
+                { text: '請問是哪家公司？工作內容具體是什麼？', nextStage: 'doubt_1_company', riskChange: 5 },
+                { text: '我對提供帳戶有疑慮，這合法嗎？', nextStage: 'end_safe_block_job', riskChange: 0 }
+            ] },
+            'follow_up_1_highpay': { speaker: 'Recruiter', message: '流程很簡單！我們是跨國公司，薪資發放需要避稅和驗證。您只需將您名下**不常用的**存摺和提款卡（含密碼）寄給我們，我們用來跑系統驗證即可。', risk: 30, options: [
+                { text: '寄送卡片？這聽起來不合法吧？', nextStage: 'doubt_2_illegal', riskChange: 0 },
+                { text: '好的，我立刻去寄。 (危險選項)', nextStage: 'end_scam_card', riskChange: 40 } 
+            ] },
+            'doubt_1_company': { speaker: 'Recruiter', message: '我們是 XX 顧問公司。工作內容就是 WFH 協助資料分析。但請注意，我們需要您配合提供存摺/金融卡，進行薪資系統驗證。', risk: 20, options: [
+                { text: '為了工作提供金融卡是正常的嗎？', nextStage: 'doubt_2_illegal', riskChange: 0 },
+                { text: '沒問題，如何提供存摺和金融卡？ (危險選項)', nextStage: 'end_scam_card', riskChange: 40 }
+            ] },
+            'doubt_2_illegal': { speaker: 'Recruiter', message: '（語氣威脅/安撫）當然合法！這是我們公司財務的特殊要求，我們只會用來跑流水和繳稅，您可以在旁邊寫下**「僅供薪資驗證使用」**。快點決定，這個職位很多人搶！', risk: 60, options: [
+                { text: '我不接受提供金融卡，這是警示帳戶的行為。', nextStage: 'end_safe_job', riskChange: 0 },
+                { text: '既然有寫用途，應該沒關係吧？我寄給你們。 (SCAM)', nextStage: 'end_scam_card', riskChange: 30 }
+            ] },
+            'end_safe_block_job': { speaker: 'Recruiter', message: '當然！這只是我們發放高額薪資前的驗證程序。如果您不信任我們，我們只能將機會給下一位配合的求職者了。', risk: 40, options: [
+                { text: '我會自行查證貴公司的合法性。', nextStage: 'end_safe_job', riskChange: 0 },
+                { text: '我還是很需要這份工作，我願意配合。 (SCAM)', nextStage: 'end_scam_card', riskChange: 30 }
+            ] },
+            'end_scam_card': { result: 'scam', title: '🔴紅色結局：成為詐騙共犯/人頭帳戶！', message: '您提供的存摺/金融卡被用於詐騙金流。您的帳戶將被列為警示帳戶，您可能面臨詐欺共犯的法律責任和巨額求償。', insight: '假求職詐騙利用您的求職心切。訓練目標：**任何要求寄送金融卡/存摺的「工作」都是詐騙。**', risk: 100 },
+            'end_safe_job': { result: 'safe', title: '🟢綠色结局：成功閃避詐騙！', message: '您識破了詐騙集團索要帳戶的意圖，成功避免了成為人頭帳戶的風險。', insight: '民眾視角：公司行號絕對不會要求員工提供金融卡、存摺及密碼來辦理薪資。', risk: 0 },
+        };
+        
+        // --- 劇情樹 5: 真實情境 (真檢警/郵局通知) ---
+        const storyTree_true_police = {
+            'start': { speaker: 'TruePolice', message: '您好，這裡是郵局。根據法規要求，我們需要核對您的身份證字號與手機末三碼，以確認您已成功領取普發金。這是單向簡訊通知，請回覆您的**身份證字號前兩碼**即可。', risk: 10, options: [
+                { text: '我擔心是詐騙，我不會隨意提供資料。', nextStage: 'follow_up_1_verify', riskChange: 5 },
+                { text: '好，我回覆：XX', nextStage: 'end_true_success_police', riskChange: -5 },
+                { text: '你們是詐騙集團吧？我直接報警。', nextStage: 'follow_up_1_verify', riskChange: 0 }
+            ] },
+            'follow_up_1_verify': { speaker: 'TruePolice', message: '我們理解您的疑慮。我們**不會要求您提供完整號碼**，也不會要求轉帳或提供密碼。這是為了確保您確實收到。請您自行撥打 1988 客服專線確認，我們的通知是否屬實。', risk: 15, options: [
+                { text: '（查證後）對不起，我誤會了。我現在回覆您前兩碼。', nextStage: 'end_true_success_police', riskChange: -10 },
+                { text: '我決定不回覆，你們是詐騙。', nextStage: 'end_true_miss_police', riskChange: 0 } 
+            ] },
+            'end_true_success_police': { result: 'safe', title: '✅ 真情結局：成功核對身份！', message: '這是政府機關的**正式查核程序**，僅要求提供部分資料以防止重複領取。您在確認後配合，確保了您的權益。', insight: '真檢警特徵：**僅要求部分公開資訊**，提供官方查證管道，**不要求轉帳、密碼或恐嚇**。', risk: 0 },
+            'end_true_miss_police': { result: 'cautious', title: '⚠️ 錯失結局：過度警惕', message: '雖然您避免了風險，但因**過度警惕**而拒絕配合政府機關的正常查核程序，這可能會影響後續的服務或領取進度。', insight: '判斷真假：真正的公務機關會提供「官方查證管道」並尊重您的查證權利。', risk: 20 },
+        };
+
+        // --- 劇情樹 6: 真實情境 (真親友借錢) ---
+        const storyTree_true_friend = {
+            'start': { speaker: 'TrueFriend', message: '（訊息）老同學，我是小華。我手機在國外壞了，現在用這個臨時號碼的 LINE 跟你聯絡。我遇到點麻煩，急需 $5,000 應急，可以幫我嗎？', risk: 10, options: [
+                { text: '（立刻）你怎麼了？我馬上轉給你！', nextStage: 'follow_up_1_help', riskChange: 15 },
+                { text: '（警惕）先等等，我要打電話給你舊號碼確認。', nextStage: 'block_1_verify_friend', riskChange: 5 },
+                { text: '（拒絕）我現在手頭不方便。', nextStage: 'end_true_miss_friend', riskChange: 0 }
+            ] },
+            'follow_up_1_help': { speaker: 'TrueFriend', message: '謝謝你！你真是我的救星。你先別急著轉，為了證明是我，我問你一個只有我們知道的秘密：**我們大學時常去哪家餐廳吃飯？**', risk: 15, options: [
+                { text: '（回答）是校門口的牛肉麵店！', nextStage: 'end_true_success_friend', riskChange: -10 },
+                { text: '（懷疑）我不知道你在說什麼，你是不是騙子？', nextStage: 'end_true_miss_friend', riskChange: 0 }
+            ] },
+            'block_1_verify_friend': { speaker: 'TrueFriend', message: '（語音訊息）你不用打舊號碼啦，我在這邊收不到。我直接發一段語音給你，證明是我的聲音，可以嗎？', risk: 20, options: [
+                { text: '（聽到聲音）喔，真的是你！對不起我太警惕了。', nextStage: 'end_true_success_friend', riskChange: -15 },
+                { text: '聲音可以偽造！我不相信。', nextStage: 'end_true_miss_friend', riskChange: 0 }
+            ] },
+            'end_true_success_friend': { result: 'safe', title: '✅ 真情結局：幫助朋友成功！', message: '你透過**秘密問題和語音確認**，證實了對方身份，並提供了幫助。你贏得了朋友的信任，也完成了互助。', insight: '真親友特徵：**願意主動提供額外、難以偽造的驗證**，並尊重你的警惕。', risk: 0 },
+            'end_true_miss_friend': { result: 'cautious', title: '⚠️ 錯失結局：過度警惕', message: '雖然您避免了風險，但因**過度警惕**而拒絕了真正的朋友/親人，可能造成關係緊張和朋友的實際困難。', insight: '判斷真假：確認真實身份的最好方式是「共同的秘密」、「語音或視訊」或「家人聯繫」。', risk: 20 },
+        };
+        
+        // --- 劇情樹 7: 真實情境 (真投資機會) ---
+        const storyTree_true_invest = {
+            'start': { speaker: 'TrueExpert', message: '您好，我們是 XX 證券。我們觀察到您對特定產業有興趣，想邀請您參加一場**免費**的產業分析講座，這不是推銷，只是分享研究。', risk: 10, options: [
+                { text: '太好了，有什麼限制嗎？', nextStage: 'follow_up_1_info', riskChange: 5 },
+                { text: '我討厭推銷，我沒興趣。', nextStage: 'end_true_miss_invest', riskChange: 0 },
+                { text: '是詐騙嗎？你怎麼知道我對這個產業有興趣？', nextStage: 'doubt_1_true_invest', riskChange: 0 }
+            ] },
+            'follow_up_1_info': { speaker: 'TrueExpert', message: '沒有限制，但講座中**不會**要求您簽約或匯款。講座結束後，您可以自行決定是否預約一對一顧問。我們的金管會許可證號是 A0088。', risk: 15, options: [
+                { text: '（查證證號）證號是真的！好，我報名講座。', nextStage: 'end_true_success_invest', riskChange: -10 },
+                { text: '我還是覺得麻煩，算了。', nextStage: 'end_true_miss_invest', riskChange: 0 } 
+            ] },
+            'doubt_1_true_invest': { speaker: 'TrueExpert', message: '我們是通過您在公開財經論壇上的發言記錄判斷的。我們理解您的謹慎，我們的金管會許可證號是 A0088，請您隨時上金管會網站查證。', risk: 15, options: [
+                { text: '（查證證號）證號是真的！好，我報名講座。', nextStage: 'end_true_success_invest', riskChange: -10 },
+                { text: '我決定不理會任何主動的邀約。', nextStage: 'end_true_miss_invest', riskChange: 0 } 
+            ] },
+            'end_true_success_invest': { result: 'safe', title: '✅ 真情結局：獲得合法投資資訊！', message: '您透過**查證金管會證號**和**確認無推銷壓力**，篩選出了一場合法的、高品質的產業講座。', insight: '真投資特徵：**提供合法證號並鼓勵查證**，**不要求即時匯款**，**不承諾暴利**。', risk: 0 },
+            'end_true_miss_invest': { result: 'cautious', title: '⚠️ 錯失結局：錯過專業資訊', message: '您因過度擔心推銷或詐騙而錯失了一次獲取合法、專業市場分析資訊的機會。', insight: '判斷真假：專業的金融機構會以知識分享開場，並提供官方查證渠道。', risk: 20 },
+        };
+
+        // --- 劇情樹 8: 真實情境 (真求職機會) ---
+        const storyTree_true_job = {
+            'start': { speaker: 'TrueRecruiter', message: '您好，我是 XX 科技人資專員。我們對您的履歷很有興趣，想邀請您參加線上面試。錄取後，我們需要您的銀行帳號以供薪資轉帳。', risk: 10, options: [
+                { text: '好，我什麼時候可以面試？', nextStage: 'follow_up_1_interview', riskChange: 5 },
+                { text: '請問你們是哪家公司？可以提供統一編號嗎？', nextStage: 'doubt_1_true_job', riskChange: 0 },
+                { text: '我對線上職位很警惕，我現在拒絕。', nextStage: 'end_true_miss_job', riskChange: 0 }
+            ] },
+            'follow_up_1_interview': { speaker: 'TrueRecruiter', message: '面試後如果錄取，我們需要您提供**薪轉帳號**（僅帳號，非密碼或卡片）。但在此之前，請您先準備好您的**個人簡歷**和**身分證件影本**用於初步背景查核。', risk: 15, options: [
+                { text: '提供身分證影本做背景查核，這是正常的嗎？', nextStage: 'doubt_2_true_job', riskChange: 5 },
+                { text: '我已經準備好，何時可以開始面試？', nextStage: 'end_true_success_job', riskChange: -5 }
+            ] },
+            'doubt_1_true_job': { speaker: 'TrueRecruiter', message: '我們的統一編號是 Z99887766。背景查核需要身分證影本是標準程序，但**絕不會要求提供金融卡、存摺或密碼**。您隨時可以到勞動部網站查證我們的統一編一號。', risk: 10, options: [
+                { text: '（查證統編）統編是真的，我接受這個程序。', nextStage: 'end_true_success_job', riskChange: -10 },
+                { text: '我決定不理會任何主動的邀約。', nextStage: 'end_true_miss_job', riskChange: 0 }
+            ] },
+            'doubt_2_true_job': { speaker: 'TrueRecruiter', message: '是的，這是為了確保您是本人，我們需要影本進行核對。但請放心，所有金融資訊都將在錄取後當面處理。我們堅持不要求金融卡。', risk: 15, options: [
+                { text: '我接受，這符合規範。', nextStage: 'end_true_success_job', riskChange: -15 },
+                { text: '我決定不理會任何需要身分證件的線上求職。', nextStage: 'end_true_miss_job', riskChange: 0 }
+            ] },
+            'end_true_success_job': { result: 'safe', title: '✅ 真情結局：找到高薪職位！', message: '您通過了背景查核，並確保了您的金融卡資訊安全。您成功找到了一份合法的高薪工作。', insight: '真求職特徵：**可查證的統一編號**，**只要求薪轉帳號（非密碼/卡片）**，要求證件影本是合理的背景查核。', risk: 0 },
+            'end_true_miss_job': { result: 'cautious', title: '⚠️ 錯失結局：錯過高薪機會', message: '您因過度警惕而拒絕了提供基本背景查核資料，錯失了一次合法的高薪遠端工作機會。', insight: '判斷真假：正規求職會要求身分查核，但絕不碰您的金融卡、存摺和密碼。', risk: 20 },
+        };
+        
+        // --- 劇情樹 9: 專業視角 (165 警員 - 假報案情境) ---
+        const storyTree_police = { 
+            'start': { speaker: 'AI', message: '（電話鈴響）... 165 專線您好，請問有什麼能協助您？', risk: 0, options: [
+                { text: '（接聽電話）', nextStage: 'citizen_call_1', riskChange: 0 },
+            ] },
+            'citizen_call_1': { speaker: 'Citizen', message: '（語氣極度恐慌）救命啊！我剛接到郵局電話，說我重複領普發金！他們說我帳戶有問題，要轉接警察，我會不會被抓走？', risk: 30, options: [
+                { text: '「您先冷靜，請提供對方電話號碼。」', nextStage: 'calm_down_1', riskChange: -10 },
+                { text: '「那是詐騙，請立刻掛斷。」', nextStage: 'too_fast', riskChange: 10 },
+                { text: '「您有操作 ATM 了嗎？」', nextStage: 'check_action', riskChange: 5 }
+            ] },
+            'too_fast': { speaker: 'Citizen', message: '（更慌張）你怎麼知道是詐騙？對方有我的身分證號！你是不是跟他們一夥的？我不敢相信你！', risk: 50, options: [
+                { text: '「相信我，這是標準SOP。請您冷靜，公務機關不會轉接電話。」', nextStage: 'calm_down_1', riskChange: -20 },
+            ] },
+            'check_action': { speaker: 'Citizen', message: '還沒有！他叫我等一下要去 ATM... 我真的要退錢嗎？', risk: 60, options: [
+                { text: '「千萬不要去！那是詐騙！請您冷靜，公務機關不會要求操作 ATM。」', nextStage: 'calm_down_1', riskChange: -30 },
+            ] },
+            'calm_down_1': { speaker: 'Citizen', message: '（深呼吸）好... 他們還說，這是「偵查不公開」，我不能跟任何人講... 我真的好怕...', risk: 40, options: [
+                { text: '「這就是關鍵破綻。聽到『偵查不公開』、『轉接警察』，100% 是詐騙。」', nextStage: 'give_advice', riskChange: -10 },
+                { text: '「那您的小孩或家人知道嗎？」', nextStage: 'check_family', riskChange: 0 }
+            ] },
+            'check_family': { speaker: 'Citizen', message: '我不敢講... 他們說我講了會被通緝... ', risk: 50, options: [
+                { text: '「他們在恐嚇您！這就是關鍵破綻。聽到『偵查不公開』就是詐騙。」', nextStage: 'give_advice', riskChange: -20 }
+            ] },
+            'give_advice': { speaker: 'AI', message: '您成功安撫了民眾，並指出了關鍵破綻。您建議的下一步是？', risk: 10, options: [
+                { text: '「請您立刻掛斷對方電話，不要再接聽。並撥打 1988 查證。」', nextStage: 'end_safe', riskChange: -10 },
+                { text: '「請您繼續跟對方聊，假裝配合，我們來監聽。」', nextStage: 'end_danger', riskChange: 50 }
+            ] },
+            'end_safe': { result: 'safe', title: '🟢綠色结局：成功攔阻！', message: '您成功安撫了民眾，並提供了正確的SOP，民眾已掛斷詐騙電話，避免了損失。', insight: '165視角：安撫情緒、指出破綻、提供正確SOP，是接線員的三大任務。', risk: 0 },
+            'end_danger': { result: 'scam', title: '🔴紅色結局：民眾陷入危險！', message: '165 不會要求民眾以身試險。您錯誤的建議可能導致民眾因操作不當，反遭詐騙集團鎖定或威脅。', insight: '165視角：首要任務是保護民眾安全，而非主動偵查。', risk: 60 },
+        };
+
+        // --- 劇情樹 10: 專業視角 (165 警員 - 真求助) ---
+        const storyTree_true_police_pro = {
+            'start': { speaker: 'AI', message: '（電話鈴響）... 165 專線您好，請問有什麼能協助您？', risk: 0, options: [
+                { text: '（接聽電話）', nextStage: 'citizen_call_true_1', riskChange: 0 },
+            ] },
+            'citizen_call_true_1': { speaker: 'ProCitizen', message: '（語氣焦急，但理智）您好，我剛接到一通 LINE 訊息，自稱是我多年不見的朋友，說手機壞了，問我「猜猜我是誰」並說有緊急情況，要借 $2 萬。我已經用舊號碼打電話確認，但無人接聽。請問我該怎麼辦？', risk: 40, options: [
+                { text: '「您先冷靜，您目前採取的「打舊號碼確認」是正確的。請問您是否能辨認他的聲音或語氣？」', nextStage: 'calm_down_true_1', riskChange: -10 },
+                { text: '「那是詐騙！請不要理會。」', nextStage: 'too_fast_true', riskChange: 10 },
+            ] },
+            'too_fast_true': { speaker: 'ProCitizen', message: '（困惑）可是他沒有提到錢，只是說很急，叫我猜他是誰... 如果真的是他怎麼辦？', risk: 50, options: [
+                { text: '「我理解您的擔憂。我們建議您詢問一個只有您們兩人知道的**私人問題**進行交叉驗證。」', nextStage: 'calm_down_true_1', riskChange: -20 },
+            ] },
+            'calm_down_true_1': { speaker: 'ProCitizen', message: '他已經主動傳了一段語音給我，但聲音聽起來有點怪怪的，但我不太確定。我應該相信他嗎？', risk: 30, options: [
+                { text: '「請不要相信語音。請您堅持使用**視訊通話**，或請他聯繫他的家人，然後您向他的家人確認。」', nextStage: 'give_advice_true', riskChange: -10 },
+                { text: '「既然他傳了語音，那應該是真的朋友了。」', nextStage: 'end_danger_true_1', riskChange: 40 }
+            ] },
+            'give_advice_true': { speaker: 'AI', message: '您成功提供了專業且安全的驗證建議。您的建議下一步是？', risk: 10, options: [
+                { text: '「請您立刻採取視訊或聯繫家人驗證，若對方拒絕，請立刻刪除 LINE。」', nextStage: 'end_safe_true_police_pro', riskChange: -10 },
+                { text: '「請您繼續嘗試與對方文字溝通，套出更多資訊。」', nextStage: 'end_danger_true_2', riskChange: 30 }
+            ] },
+            'end_safe_true_police_pro': { result: 'safe', title: '🟢綠色结局：專業導引，成功驗證！', message: '您提供了正確的多重驗證方法。民眾已承諾會採取視訊或聯繫家人驗證。無論對方是真是假，風險均已降到最低。', insight: '真求助情境：專業視角必須提供**多層次、非單一證據**的驗證方法。', risk: 0 },
+            'end_danger_true_1': { result: 'scam', title: '🔴紅色結局：輕信語音，誤導民眾！', message: 'AI 語音和 Deepfake 很容易偽造。您錯誤地建議民眾相信語音，可能導致民眾繼續陷入詐騙陷阱。', insight: '165視角：絕不相信單一驗證方法。', risk: 60 },
+            'end_danger_true_2': { result: 'scam', title: '🔴紅色結局：引導民眾深入險境！', message: '您不該要求民眾自行套話。這可能讓民眾暴露更多資訊，或讓詐騙集團更強烈地反撲。', insight: '165視角：保護民眾安全始終是第一要務。', risk: 60 },
+        };
+
+        // --- 劇情樹 11: 專業視角 (銀行專員 - 真匯款) ---
+        const storyTree_true_banker_pro = {
+            'start': { speaker: 'AI', message: '（一位客戶走近櫃檯，匯款單填寫完整，但看起來有點不耐煩...）', risk: 10, options: [
+                { text: '（點頭微笑）「您好，請問需要什麼服務？」', nextStage: 'customer_request_true', riskChange: 0 },
+            ] },
+            'customer_request_true': { speaker: 'RealCustomer', message: '（語氣堅定，略帶不耐）「我要匯款 50 萬，這是給車行買新車的頭期款。請快一點，我趕著去簽約。」', risk: 20, options: [
+                { text: '（標準關懷提問）「好的，請問您認識對方車行嗎？您匯這麼大筆錢的目的是？」', nextStage: 'probing_1_ask_true', riskChange: 0 },
+                { text: '（直接放行）「好的，請稍等。」', nextStage: 'end_fail_miss_true', riskChange: 10 }
+            ] },
+            'probing_1_ask_true': { speaker: 'RealCustomer', message: '（略有惱怒）「我已經說了，是買新車的頭期款！收款方是 XX 車行的公司帳戶。我都填在單子上了，你還不相信我嗎？快點！」', risk: 30, options: [
+                { text: '（確認細節）「好的，謝謝您的耐心。請問您有**書面購車合約**可以讓我看一下嗎？這是我們內控的要求，請您諒解。」', nextStage: 'probing_2_doc', riskChange: 0 },
+                { text: '（直接指控）「您是不是被詐騙了？我必須凍結您的交易！」', nextStage: 'end_fail_angry_true', riskChange: 20 }
+            ] },
+            'probing_2_doc': { speaker: 'RealCustomer', message: '（語氣緩和）「好吧，我知道了...（從包裡拿出合約）這是合約，你看一下吧。你們銀行真的管很多。」', risk: 20, options: [
+                { text: '（看完合約，確認收款帳戶與合約公司名稱一致）「謝謝您的配合，我現在幫您處理匯款。」', nextStage: 'end_safe_true_banker_pro', riskChange: -20 },
+                { text: '「我還是不放心，我需要通知警察過來。」', nextStage: 'end_fail_angry_true', riskChange: 15 }
+            ] },
+            'end_safe_true_banker_pro': { result: 'safe', title: '🟢綠色結局：高效服務，重建信任！', message: '您通過耐心和專業的態度，在沒有激怒客戶的情況下完成了合規的關懷提問和資料核對。客戶的交易順利完成，並對銀行的謹慎留下良好印象。', insight: '真情境判斷：真正的客戶可以提供完整的、合理的書面證明和細節，且最終會配合。', risk: 0 },
+            'end_fail_miss_true': { result: 'cautious', title: '⚠️ 錯失結局：合規流程疏失', message: '您未能完成關懷提問。雖然這次是真交易，但您忽略了合規要求，一旦發生詐騙，銀行將承擔全部責任。', insight: '銀行視角：合規是底線，不能因客戶不耐煩而省略步驟。', risk: 40 },
+            'end_fail_angry_true': { result: 'scam', title: '🔴紅色結局：服務失當，客戶投訴！', message: '您直接指控客戶詐騙，導致客戶強烈不滿並向主管機關投訴。這對銀行聲譽造成重大損害，完全違背了「重建信任」的目標。', insight: '銀行視角：在真情境下，直接指控是最大的服務失誤。', risk: 100 },
+        };
+        // --- 劇情樹 12: 專業視角 (銀行專員 - 假匯款) ---
+        const storyTree_banker = { 
+            'start': { speaker: 'AI', message: '（一位客戶神色慌張地走來，他正戴著耳機講電話，看起來很緊張...）', risk: 20, options: [
+                { text: '（點頭微笑）「您好，歡迎光臨，請問需要什麼服務？」', nextStage: 'customer_request', riskChange: 0 },
+            ] },
+            'customer_request': { speaker: 'Customer', message: '（小聲）我...我要匯款 50 萬。快點...我有點趕時間...', risk: 40, options: [
+                { text: '（標準流程）「好的，請您填寫匯款單，並出示證件。」', nextStage: 'probing_1_delay', riskChange: 0 },
+                { text: '（直接詢問）「您匯這麼大筆錢，是做什麼用的呢？」', nextStage: 'probing_1_ask', riskChange: 10 }
+            ] },
+            'probing_1_delay': { speaker: 'Customer', message: '（客戶開始填單，但手在抖，並小聲對電話說：「是...是...我在辦了...」）', risk: 50, options: [
+                { text: '（執行關懷提問）「先生，看您很急，請問這筆錢是匯給誰呢？」', nextStage: 'probing_1_ask', riskChange: 0 }
+            ] },
+            'probing_1_ask': { speaker: 'Customer', message: '（不耐煩）「是我...是我姪子要買房子！你問這麼多幹嘛！快點幫我匯！」', risk: 60, options: [
+                { text: '「這是規定，我們要關心客戶。請問您認識對方嗎？」', nextStage: 'probing_2', riskChange: 0 },
+                { text: '「您是不是碰到詐騙了？」', nextStage: 'too_direct', riskChange: 20 }
+            ] },
+            'too_direct': { speaker: 'Customer', message: '（暴怒）「你才詐騙！我好心幫我姪子，你憑什麼說我詐騙？我不匯了！我去別家銀行！」', risk: 80, options: [
+                { text: '（客戶離開，攔阻失敗）', nextStage: 'end_fail_angry', riskChange: 0 }
+            ] },
+            'probing_2': { speaker: 'Customer', message: '（更小聲，對電話：「他們一直在問...」）...「我當然認識！你不要再問了！快匯！」', risk: 70, options: [
+                { text: '「先生，我們偵測到這個帳戶有風險...」', nextStage: 'stall_1_risk', riskChange: 0 },
+                { text: '（按下警鈴，通知警方）「先生請稍等，我們系統有點慢...」', nextStage: 'stall_1_police', riskChange: 0 },
+                { text: '（屈服）「好的，我立刻幫您處理...」', nextStage: 'end_fail_transfer', riskChange: 30 }
+            ] },
+            'stall_1_risk': { speaker: 'Customer', message: '（ panic ）「什麼風險？我不管！你快匯！不然我投訴你！」', risk: 85, options: [
+                { text: '（按下警鈴，通知警方）「先生請冷靜，我們是為了保護您...」', nextStage: 'stall_1_police', riskChange: 0 },
+                { text: '（屈服）「抱歉，我立刻幫您處理...」', nextStage: 'end_fail_transfer', riskChange: 30 }
+            ] },
+            'stall_1_police': { speaker: 'AI', message: '（您成功拖延了時間，警方已在路上。客戶非常焦慮，但無法離開...）', risk: 50, options: [
+                { text: '（警方抵達，成功攔阻）', nextStage: 'end_safe', riskChange: -50 }
+            ] },
+            'end_safe': { result: 'safe', title: '🟢綠色結局：臨櫃攔阻成功！', message: '您透過關懷提問和拖延戰術，成功阻止了客戶匯款，並等到警方到場，保住了客戶的 50 萬。', insight: '銀行視角：面對焦慮的客戶，同理心和「拖延」是攔阻詐騙的關鍵技巧。', risk: 0 },
+            'end_fail_angry': { result: 'cautious', title: '🟡黃色結局：攔阻失敗 (客戶流失)', message: '您太過直接的提問激怒了客戶，客戶已離開。雖然這次沒匯出，但他很可能去下一家銀行，風險並未解除。', insight: '銀行視角：關懷提問需要技巧，避免直接指控客戶「被詐騙」。', risk: 80 },
+            'end_fail_transfer': { result: 'scam', title: '🔴紅色結局：攔阻失敗 (匯出)', message: '您屈服於客戶的壓力，完成了匯款。客戶的 50 萬已進入詐騙集團帳戶，造成無法挽回的損失。', insight: '銀行視角：SOP 的最後一道防線，在於專員的堅持。', risk: 100 },
+        };
+
+
+        // --- 故事樹總集合 (確保只宣告一次) ---
+        const STORY_TREES = {
+            quiz: {}, 
+            citizen: storyTree_citizen, // 假檢警
+            friend: storyTree_friend,   // 假親友
+            invest: storyTree_invest,   // 假投資
+            job_scam: storyTree_job_scam, // 假求職
+            
+            true_police: storyTree_true_police, // 真檢警/郵局 (民眾模式)
+            true_friend: storyTree_true_friend, // 真親友 (民眾模式)
+            true_invest: storyTree_true_invest, // 真投資 (民眾模式)
+            true_job: storyTree_true_job,       // 真求職 (民眾模式)
+
+            police: storyTree_police,   // 165 警員 (假報案)
+            true_police_pro: storyTree_true_police_pro, // 165 警員 (真求助)
+            bank: storyTree_banker,     // 銀行專員 (假匯款)
+            true_banker_pro: storyTree_true_banker_pro, // 銀行專員 (真匯款)
+        };
+
+        // --- 情境對應表 (用於隨機模式) ---
+        const SCENARIO_MAP = {
+            'citizen_rand': { fake: 'citizen', true: 'true_police', name: '檢警查核' },
+            'friend_rand': { fake: 'friend', true: 'true_friend', name: '親友求助' },
+            'invest_rand': { fake: 'invest', true: 'true_invest', name: '投資獲利' },
+            'job_rand': { fake: 'job_scam', true: 'true_job', name: '高薪求職' },
+            
+            // 專業視角隨機模式
+            'police_rand': { fake: 'police', true: 'true_police_pro', name: '165 報案' },
+            'bank_rand': { fake: 'bank', true: 'true_banker_pro', name: '銀行臨櫃' },
+        };
+
+        // --- 模式切換邏輯 (確保只宣告一次) ---
+        function switchMode(newMode) {
+            if (newMode === 'quiz') {
+                isQuizCompleted = false;
+                resetGame(false); 
+                return;
+            }
+            
+            // 處理隨機模式切換
+            let finalMode = newMode;
+            let scenario = SCENARIO_MAP[newMode];
+
+            if (scenario) {
+                // 50% 機率選擇真情境或假情境
+                finalMode = Math.random() < 0.5 ? scenario.fake : scenario.true; 
+                
+                // 設定標題，讓玩家知道他們進入了哪個情境
+                const type = finalMode.startsWith('true') ? '🟢 真實' : '🔴 詐騙';
+                const name = scenario.name;
+                
+                if (newMode.includes('_rand')) {
+                    headerTitle.textContent = `${newMode.includes('pro') ? '專業' : '民眾'}視角：${type} ${name}`;
+                } else {
+                     headerTitle.textContent = `${newMode.includes('pro') ? '專業' : '民眾'}視角：${type} ${name} (固定)`;
+                }
+            } else {
+                 // 處理非隨機模式的標題 (例如 quiz, police, bank)
+                 if (newMode === 'police') {
+                     headerTitle.textContent = '專業視角：🔴 165 假報案 (固定)';
+                 } else if (newMode === 'bank') {
+                     headerTitle.textContent = '專業視角：🔴 銀行臨櫃假匯款 (固定)';
+                 } else {
+                     headerTitle.textContent = '情境載入中...';
+                 }
+            }
+
+            currentMode = finalMode;
+            currentStoryTree = STORY_TREES[finalMode];
+
+            // 更新按鈕狀態
+            document.querySelectorAll('.mode-button').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.mode === newMode) {
+                    btn.classList.add('active'); // 激活被點擊的隨機按鈕
+                }
+            });
+            
+            // 重置遊戲以加載新情境
+            if (isQuizCompleted) {
+                resetGame(true);
+            }
+        }
+
+        // --- 心理測驗相關函數 (確保只宣告一次) ---
+        
+        // 渲染心理測驗 UI
+        function renderQuiz() {
+            chatWindow.innerHTML = '';
+            
+            if (quizStage >= QUIZ_QUESTIONS.length) {
+                renderQuizResult();
+                return;
+            }
+
+            const currentQ = QUIZ_QUESTIONS[quizStage];
+            
+            // 渲染問題
+            renderMessage('AI', `【第 ${quizStage + 1} 題】請誠實回答以下情境中，您的「第一反應」是？`);
+            renderMessage('AI', `${currentQ.q}`);
+            
+            optionsContainer.innerHTML = '';
+            currentQ.options.forEach(option => {
+                const button = document.createElement('button');
+                button.textContent = option.text;
+                button.classList.add(
+                    'w-full', 'p-3', 'mb-2', 'bg-pink-500', 'text-white',
+                    'font-semibold', 'rounded-xl', 'hover:bg-pink-600',
+                    'transition', 'duration-150', 'shadow-md'
+                );
+                button.onclick = () => handleQuizAnswer(option.score, option.text);
+                optionsContainer.appendChild(button);
+            });
+        }
+
+        // 處理測驗答案
+        function handleQuizAnswer(score, answerText) {
+            // 1. 渲染玩家回答
+            renderMessage('Player', answerText);
+            
+            // 2. 更新分數和階段
+            quizScore += score;
+            quizStage++;
+            
+            // 3. 移動到下一個問題或結果
+            setTimeout(() => {
+                if (quizStage < QUIZ_QUESTIONS.length) {
+                    renderQuiz();
+                } else {
+                    renderQuizResult();
+                }
+            }, 600);
+        }
+
+        // 顯示測驗結果並轉換到遊戲選擇
+        function renderQuizResult() {
+            isQuizCompleted = true;
+            const result = getPersonality(quizScore);
+            
+            chatWindow.innerHTML = '';
+            
+            renderMessage('AI', `【測驗結果出爐！】`);
+            renderMessage('AI', `根據您的回答，您的總分是 ${quizScore} 分 (總分 9 分，分數越高代表傾向輕信/衝動)。`);
+            renderMessage('AI', `${result.title}`);
+            renderMessage('AI', `訓練建議：${result.description}`);
+            
+            optionsContainer.innerHTML = '';
+            
+            // 顯示開始遊戲按鈕
+            const startButton = document.createElement('button');
+            startButton.textContent = '開始進行模擬訓練 / 選擇你的角色';
+            startButton.classList.add(
+                'w-full', 'p-4', 'mb-2', 'bg-indigo-600', 'text-white',
+                'font-bold', 'text-lg', 'rounded-xl', 'hover:bg-indigo-700',
+                'transition', 'duration-200', 'shadow-lg'
+            );
+            startButton.onclick = () => {
+                modeSelector.classList.remove('hidden'); // 顯示模式選擇按鈕
+                // 進入隨機檢警情境
+                switchMode('citizen_rand'); 
+            };
+            optionsContainer.appendChild(startButton);
+        }
+
+        // --- 核心渲染函數 (確保只宣告一次) ---
+
+        /** 渲染一則聊天訊息 (新增頭像與氣泡樣式) */
+        function renderMessage(speaker, message) {
+            const isAI = (speaker === 'AI' || speaker === 'Citizen' || speaker === 'Customer' || speaker === 'Friend' || speaker === 'Expert' || speaker === 'Recruiter' || speaker.startsWith('True') || speaker.startsWith('Pro') || speaker.startsWith('Real'));
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('flex', 'items-start', 'space-x-3', 'mb-4', isAI ? 'justify-start' : 'justify-end');
+
+            const messageContent = document.createElement('div');
+            const avatarUrl = AVATARS[speaker] || AVATARS['AI'];
+            
+            // 聊天氣泡
+            const bubble = document.createElement('div');
+            bubble.classList.add('chat-bubble', isAI ? 'bg-white' : 'bg-indigo-500', isAI ? 'text-gray-800' : 'text-white', isAI ? 'shadow-md' : 'shadow-lg');
+            
+            // 根據說話者調整氣泡圓角
+            if (isAI) {
+                bubble.classList.add('rounded-tr-xl', 'rounded-bl-xl', 'rounded-br-xl');
+            } else {
+                bubble.classList.add('rounded-tl-xl', 'rounded-bl-xl', 'rounded-br-xl');
+            }
+
+            // --- 顏色判斷邏輯 ---
+            bubble.classList.remove('bg-white', 'text-gray-800', 'bg-red-100', 'text-red-800', 'bg-yellow-100', 'text-yellow-800', 'bg-green-100', 'text-green-800', 'bg-purple-100', 'text-purple-800', 'bg-orange-100', 'text-orange-800', 'bg-blue-100', 'text-blue-800', 'bg-green-200', 'text-green-800', 'bg-purple-200', 'text-purple-800', 'bg-red-200', 'text-red-800', 'bg-gray-200');
+
+            if(speaker === 'Citizen') { // 恐慌民眾 (165 假報案)
+                bubble.classList.add('bg-red-100', 'text-red-800'); 
+            } else if(speaker === 'Customer') { // 焦慮客戶 (銀行假匯款)
+                bubble.classList.add('bg-yellow-100', 'text-yellow-800'); 
+            } else if(speaker === 'ProCitizen') { // 真情境中的民眾 (165 真求助)
+                bubble.classList.add('bg-blue-100', 'text-blue-800', 'font-semibold'); 
+            } else if(speaker === 'RealCustomer') { // 真情境中的客戶 (銀行真匯款)
+                bubble.classList.add('bg-green-100', 'text-green-800', 'font-semibold'); 
+            } else if(speaker === 'Friend') { // 假親友
+                bubble.classList.add('bg-green-100', 'text-green-800'); 
+            } else if(speaker === 'Expert') { // 假專家
+                bubble.classList.add('bg-purple-100', 'text-purple-800'); 
+            } else if(speaker === 'Recruiter') { // 假招募
+                 bubble.classList.add('bg-orange-100', 'text-orange-800'); 
+            } else if(speaker === 'TruePolice' || speaker === 'TrueExpert' || speaker === 'TrueRecruiter' || speaker === 'TrueFriend') { // 真情境 NPC
+                 bubble.classList.add('bg-green-200', 'text-green-800', 'font-semibold'); 
+            } else if(speaker === 'AI' && !isQuizCompleted) { // 測驗訊息
+                 bubble.classList.add('bg-green-100', 'text-green-800', 'font-semibold'); 
+            } else if (speaker === 'Player') { // 玩家
+                bubble.classList.add('bg-indigo-500', 'text-white');
+            } else { // 假檢警 NPC / 預設詐騙
+                bubble.classList.add('bg-gray-200', 'text-gray-800'); 
+            }
+            // --- 顏色判斷邏輯 END ---
+
+            bubble.textContent = message;
+
+            // 頭像元素
+            const avatar = document.createElement('img');
+            avatar.src = avatarUrl;
+            avatar.alt = speaker;
+            avatar.classList.add('avatar', 'w-10', 'h-10', 'flex-shrink-0', 'shadow');
+            
+            if (isAI) {
+                // NPC/AI 在左側
+                messageElement.appendChild(avatar);
+                messageElement.appendChild(bubble);
+            } else {
+                // Player 在右側
+                messageElement.classList.add('pl-12'); // 確保右側氣泡不會靠邊
+                messageElement.appendChild(bubble);
+                messageElement.appendChild(avatar);
+                messageElement.classList.remove('space-x-3');
+                messageElement.classList.add('space-x-reverse', 'space-x-3');
+            }
+
+            chatWindow.appendChild(messageElement);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        /** 渲染玩家可選的選項按鈕 */
+        function renderOptions(options) {
+            optionsContainer.innerHTML = ''; 
+            options.forEach(option => {
+                const button = document.createElement('button');
+                button.textContent = option.text;
+                button.classList.add(
+                    'w-full', 'p-3', 'mb-2', 'bg-indigo-500', 'text-white',
+                    'font-semibold', 'rounded-xl', 'hover:bg-indigo-600',
+                    'transition', 'duration-150', 'shadow-md'
+                );
+                button.onclick = () => handleOptionClick(option);
+                optionsContainer.appendChild(button);
+            });
+        }
+
+        /** 更新風險指數顯示 (未使用，但保留) */
+        function updateRiskScore(change) {
+            riskScore = Math.min(100, Math.max(0, riskScore + change)); 
+        }
+
+        /** 處理玩家點擊選項 (僅在遊戲模式下使用) */
+        function handleOptionClick(option) {
+            // 1. 渲染玩家回覆 (玩家在所有模式中都叫 'Player')
+            renderMessage('Player', option.text);
+
+            // 2. 更新風險分數
+            updateRiskScore(option.riskChange);
+
+            // 3. 推進劇情
+            currentStage = option.nextStage;
+            const nextNode = currentStoryTree[currentStage];
+
+            if (nextNode.result) {
+                endGame(nextNode);
+            } else {
+                // 渲染 AI/NPC 回覆並呈現下一組選項
+                setTimeout(() => {
+                    // 根據模式確定 NPC 說話者名稱
+                    let speakerName = nextNode.speaker;
+                    
+                    // 專業模式下的 NPC 是民眾/客戶
+                    if (currentMode === 'police' && nextNode.speaker === 'AI' && currentStage !== 'start') speakerName = 'Citizen'; 
+                    if (currentMode === 'bank' && nextNode.speaker === 'AI' && currentStage !== 'start') speakerName = 'Customer'; 
+                    
+                    // 真情境中的專業 NPC 客戶
+                    if (currentMode === 'true_police_pro') speakerName = 'ProCitizen';
+                    if (currentMode === 'true_banker_pro') speakerName = 'RealCustomer';
+
+                    // 民眾模式下的假/真 NPC
+                    if (currentMode === 'friend') speakerName = 'Friend'; 
+                    if (currentMode === 'invest') speakerName = 'Expert';
+                    if (currentMode === 'job_scam') speakerName = 'Recruiter'; 
+
+                    // 真實情境模式下的 NPC
+                    if (currentMode === 'true_police') speakerName = 'TruePolice';
+                    if (currentMode === 'true_friend') speakerName = 'TrueFriend';
+                    if (currentMode === 'true_invest') speakerName = 'TrueExpert';
+                    if (currentMode === 'true_job') speakerName = 'TrueRecruiter';
+
+                    renderMessage(speakerName, nextNode.message);
+                    renderOptions(nextNode.options);
+                }, 600); // 模擬 AI/NPC 回覆延遲
+            }
+        }
+
+        /** 結束遊戲並顯示結果 */
+        function endGame(node) {
+            optionsContainer.innerHTML = ''; 
+            document.getElementById('result-title').textContent = node.title;
+            document.getElementById('result-message').textContent = node.message;
+            document.getElementById('result-insight').textContent = node.insight; 
+            
+            const titleElement = document.getElementById('result-title');
+            titleElement.classList.remove('text-red-600', 'text-green-600', 'text-yellow-600');
+            if (node.result === 'scam') {
+                titleElement.classList.add('text-red-600');
+            } else if (node.result === 'safe') {
+                titleElement.classList.add('text-green-600');
+            } else if (node.result === 'cautious') {
+                titleElement.classList.add('text-yellow-600');
+            }
+            resultModal.classList.remove('hidden');
+        }
+
+        /** 重設遊戲 (會加載當前模式的 'start') */
+        function resetGame(keepMode = false) {
+            chatWindow.innerHTML = '';
+            resultModal.classList.add('hidden');
+            riskScore = 0;
+            updateRiskScore(0); 
+
+            if (!isQuizCompleted || (keepMode === false && currentMode === 'quiz')) {
+                // 如果測驗未完成或明確要求重置測驗
+                quizScore = 0;
+                quizStage = 0;
+                isQuizCompleted = false;
+                modeSelector.classList.add('hidden');
+                riskIndicator.classList.add('hidden');
+                headerTitle.textContent = 'AI 防詐：個人防禦傾向測驗';
+                renderQuiz();
+                return;
+            }
+            
+            // 遊戲模式的啟動邏輯
+            modeSelector.classList.remove('hidden');
+            riskIndicator.classList.remove('hidden');
+            const initialNode = currentStoryTree['start'];
+            currentStage = 'start';
+
+            // 根據模式調整起始語氣 (確保是正確的 NPC)
+            let initialSpeaker = initialNode.speaker;
+            if (currentMode === 'police') initialSpeaker = 'AI'; 
+            if (currentMode === 'bank') initialSpeaker = 'AI'; 
+            if (currentMode === 'friend') initialSpeaker = 'Friend'; 
+            if (currentMode === 'invest') initialSpeaker = 'Expert';
+            if (currentMode === 'job_scam') initialSpeaker = 'Recruiter';
+            if (currentMode === 'true_police') initialSpeaker = 'TruePolice';
+            if (currentMode === 'true_friend') initialSpeaker = 'TrueFriend';
+            if (currentMode === 'true_invest') initialSpeaker = 'TrueExpert';
+            if (currentMode === 'true_job') initialSpeaker = 'TrueRecruiter';
+            if (currentMode === 'true_police_pro') initialSpeaker = 'ProCitizen';
+            if (currentMode === 'true_banker_pro') initialSpeaker = 'RealCustomer';
+
+            renderMessage(initialSpeaker, initialNode.message);
+            renderOptions(initialNode.options);
+        }
+
+        // 啟動遊戲 (默認加載民眾視角)
+        window.onload = () => {
+            // 初始狀態下，isQuizCompleted 為 false，會自動觸發 resetGame 進入 renderQuiz
+            resetGame();
+        };
+
+    </script>
+
+</body>
+</html>
